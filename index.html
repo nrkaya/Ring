@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050506">
+<meta property="og:title" content="Ring of Letters">
+<meta property="og:description" content="A diamond ring drawn in light, one letter at a time.">
+<title>Ring of Letters</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);box-sizing:border-box}
+/* layout: one 9:16 phone-shaped stage (720×1280) scaled to fit; art on top, terminal + editor below */
+:root {
+  --ink: #050506;
+  --paper: #d4d7dd;
+  --dim: #5d6270;
+  --hud: #8b909b;
+  --hot: #ff4d6d;
+  --edge: #1b1d22;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--mono);
+  box-sizing: border-box;
+  padding-block: 16px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  overflow: hidden;
+}
+body.rec { padding: 0; }
+.shell { height: 100%; display: grid; place-items: center; }
+.fit { position: relative; overflow: hidden; outline: 1px solid var(--edge); }
+body.rec .fit { outline: none; }
+.stage {
+  position: absolute; left: 0; top: 0;
+  width: 720px; height: 1280px;
+  transform-origin: 0 0;
+  background: var(--ink);
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+}
+.stage:focus-visible { outline: 2px solid var(--hot); outline-offset: -2px; }
+#art, #glow { position: absolute; left: 0; top: 0; width: 720px; height: 756px; }
+#glow { filter: blur(8px) brightness(1.4); mix-blend-mode: screen; opacity: .9; pointer-events: none; }
+.vignette {
+  position: absolute; left: 0; top: 0; width: 720px; height: 760px; pointer-events: none;
+  background: radial-gradient(ellipse 62% 58% at 50% 46%, transparent 55%, rgba(5,5,6,.75) 100%);
+}
+.t-readout {
+  position: absolute; right: 26px; top: 142px;
+  font-size: 13px; color: #ff7a90; letter-spacing: .04em;
+  font-variant-numeric: tabular-nums;
+}
+.t-readout .dot {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--hot); margin-right: 6px; vertical-align: 2px;
+}
+.hud {
+  position: absolute; left: 42px; top: 700px;
+  font-size: 12px; line-height: 18px; color: var(--hud);
+  white-space: pre; font-variant-numeric: tabular-nums;
+}
+.bar {
+  position: absolute; left: 0; right: 0; top: 758px; height: 34px;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0 24px; font-size: 13px; color: #c9ccd3;
+  border-bottom: 1px solid var(--edge);
+}
+.bar .state { color: var(--hud); font-variant-numeric: tabular-nums; }
+.code {
+  position: absolute; left: 0; right: 0; top: 794px; bottom: 0;
+  overflow: hidden; font-size: 15px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 70px, #000 calc(100% - 60px), transparent 100%);
+          mask-image: linear-gradient(to bottom, transparent 0, #000 70px, #000 calc(100% - 60px), transparent 100%);
+}
+.lines { position: absolute; left: 0; right: 0; top: 0; will-change: transform; }
+.ln { height: 22.5px; line-height: 22.5px; white-space: pre; display: flex; position: relative; }
+.ln .no { width: 66px; flex: none; text-align: right; padding-right: 22px; box-sizing: border-box; color: #3f434c; }
+.ln .tx { flex: 1; min-width: 0; overflow: hidden; }
+.ln.cur { background: rgba(255,77,109,.075); }
+.ln.cur .no { color: #c9ccd3; }
+.ln.cur::before { content: ""; position: absolute; left: 24px; top: 2px; bottom: 2px; width: 2px; background: var(--hot); }
+.cursor { display: inline-block; width: 8px; height: 17px; vertical-align: -3px; background: var(--hot); }
+.cursor.blink { animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.k { color: #ff6b8b; } .s { color: #b9dd9a; } .n { color: #f7b267; } .m { color: #b4a7ff; }
+.f { color: #7dc4ff; } .d { color: #7dc4ff; } .u { color: #e6c98f; } .c { color: #575c69; font-style: italic; }
+.b { color: #7dc4ff; }
+.fade { position: absolute; inset: 0; background: var(--ink); opacity: 0; pointer-events: none; }
+@media (max-width: 520px) { body { padding-left: 0; padding-right: 0; padding-block: 0; } .fit { outline: none; } }
+@media (prefers-reduced-motion: reduce) { .cursor.blink { animation: none; } }
+</style>
+
+</head>
+<body>
+<div class="shell">
+  <div class="fit" id="fit">
+    <div class="stage" id="stage" tabindex="0" role="button" aria-label="Ring of Letters animation. Click to replay from the start.">
+      <canvas id="art" width="1440" height="1512"></canvas>
+      <canvas id="glow" width="360" height="378" aria-hidden="true"></canvas>
+      <div class="vignette" aria-hidden="true"></div>
+      <div class="t-readout"><span class="dot" id="dot"></span>t <span id="tval">00.00</span>s</div>
+      <div class="hud" id="hud">@nrkaya · 2026
+rotation 000.00°   glints   0
+letters 0</div>
+      <div class="bar"><span>$ py art.py</span><span class="state" id="state">running · 30 fps</span></div>
+      <div class="code" aria-hidden="true"><div class="lines" id="lines"></div></div>
+      <div class="fade" id="fade"></div>
+    </div>
+  </div>
+</div>
+
+<script type="text/plain" id="art-py"># art.py · a ring drawn in light, one letter at a time
+import numpy as np
+
+TAU = 2 * np.pi
+R_BAND, BAND_W, BAND_T = 1.00, 0.28, 0.20       # shank radius, width, thickness
+GIRDLE_R, GIRDLE_Y = 0.42, 1.52                  # widest ring of the stone
+TABLE_R, TABLE_Y = 0.25, 1.69                    # the flat top facet
+CULET_Y = 1.18                                   # the point underneath
+BAND, PRONG, GEM = 0, 1, 2
+TURN = 12.0                                      # seconds per revolution
+RAMP = " .:-=+*oxO08%#&@"                        # dark → bright
+COLS, ROWS = 120, 84
+rng = np.random.default_rng(22)
+
+
+def band(n=420, m=28):
+    """the shank: a squircle swept once around a circle"""
+    u, v = [x.ravel() for x in np.meshgrid(np.linspace(0, TAU, n), np.linspace(0, TAU, m))]
+    cr, sr = np.cos(v), np.sin(v)
+    r = np.sign(cr) * np.abs(cr) ** 0.5 * BAND_T / 2
+    z = np.sign(sr) * np.abs(sr) ** 0.5 * BAND_W / 2
+    P = np.stack([(R_BAND + r) * np.cos(u), (R_BAND + r) * np.sin(u), z], 1)
+    N = np.stack([cr * np.cos(u), cr * np.sin(u), sr], 1)
+    return P, N
+
+
+def diamond(m=16):
+    """a brilliant cut: every facet is flat, so every facet flashes alone"""
+    P, N, F = [], [], []
+
+    def facet(corners, normal, k=110):
+        a, b, c = corners
+        u, v = rng.random((2, k))
+        keep = u + v <= 1
+        pts = a + (b - a) * u[keep, None] + (c - a) * v[keep, None]
+        P.append(pts), N.append(np.tile(normal / np.linalg.norm(normal), (len(pts), 1)))
+        F.append(np.full(len(pts), len(F)))
+
+    for i in range(m):
+        a0, a1 = TAU * i / m, TAU * (i + 1) / m
+        g0 = np.array([GIRDLE_R * np.cos(a0), GIRDLE_Y, GIRDLE_R * np.sin(a0)])
+        g1 = np.array([GIRDLE_R * np.cos(a1), GIRDLE_Y, GIRDLE_R * np.sin(a1)])
+        t0 = np.array([TABLE_R * np.cos(a0), TABLE_Y, TABLE_R * np.sin(a0)])
+        t1 = np.array([TABLE_R * np.cos(a1), TABLE_Y, TABLE_R * np.sin(a1)])
+        culet = np.array([0, CULET_Y, 0])
+        crown = np.cross(g1 - g0, t0 - g0)
+        crown *= np.sign(crown[1]) or 1
+        facet((g0, g1, t0), crown)
+        facet((g1, t1, t0), crown * [1, 1.15, 1])
+        pav = np.cross(culet - g0, g1 - g0)
+        pav *= -np.sign(pav[1]) or 1
+        facet((g0, g1, culet), pav)
+        facet((np.array([0, TABLE_Y, 0]), t0, t1), np.array([0, 1.0, 0]))
+    return np.concatenate(P), np.concatenate(N), np.concatenate(F)
+
+
+def prongs():
+    """four claws that rise from the band and grip the girdle"""
+    P, N = [], []
+    for i in range(4):
+        a = TAU * (i + 0.5) / 4
+        base = np.array([0.08 * np.cos(a), R_BAND + BAND_T / 2, 0.08 * np.sin(a)])
+        tip = np.array([(GIRDLE_R + 0.015) * np.cos(a), TABLE_Y - 0.03, (GIRDLE_R + 0.015) * np.sin(a)])
+        u, phi = [x.ravel() for x in np.meshgrid(np.linspace(0, 1, 40), np.linspace(0, TAU, 12))]
+        d = (tip - base) / np.linalg.norm(tip - base)
+        s = np.cross(d, [0, 0, 1.0]); s /= np.linalg.norm(s)
+        w = np.cross(s, d)
+        n = np.cos(phi)[:, None] * s + np.sin(phi)[:, None] * w
+        P.append(base + u[:, None] * (tip - base) + n * 0.022), N.append(n)
+    return np.concatenate(P), np.concatenate(N)
+
+
+BAND_P, BAND_N = band()
+GEM_P, GEM_N, GEM_F = diamond()
+PRONG_P, PRONG_N = prongs()
+RING_P = np.concatenate([BAND_P, PRONG_P, GEM_P])
+RING_N = np.concatenate([BAND_N, PRONG_N, GEM_N])
+RING_KIND = np.concatenate([np.full(len(BAND_P), BAND), np.full(len(PRONG_P), PRONG), np.full(len(GEM_P), GEM)])
+FACET = np.concatenate([np.full(len(BAND_P) + len(PRONG_P), -1), GEM_F])
+SEED = rng.normal(size=RING_P.shape)             # where each point drifts in from
+
+
+# -- light: a key light, a moving rim light, and a sparkle per facet --
+
+def lights(t):
+    key = np.array([-0.4, 0.7, 0.8])
+    rim = np.array([np.cos(t * 0.3), 0.5, np.sin(t * 0.3)])
+    return key / np.linalg.norm(key), rim / np.linalg.norm(rim)
+
+
+def spin(t):
+    return TAU * max(t - DRAW[1] - 0.6, 0) / TURN       # starts once it is drawn
+
+
+def rot_y(p, a):
+    c, s = np.cos(a), np.sin(a)
+    return np.stack([c * p[:, 0] + s * p[:, 2], p[:, 1], -s * p[:, 0] + c * p[:, 2]], 1)
+
+
+def draw_order():
+    """when each point appears: the band draws itself from the bottom up,
+    then the prongs rise, then the diamond fills in from its tip"""
+    p = RING_P
+    up_band = np.abs(np.angle(np.exp(1j * (np.arctan2(p[:, 1], p[:, 0]) + TAU / 4)))) / np.pi
+    prong = 1.0 + (p[:, 1] - R_BAND - BAND_T / 2) / (TABLE_Y - R_BAND) * 0.25
+    gem = 1.25 + (p[:, 1] - CULET_Y) / (TABLE_Y - CULET_Y) * 0.45
+    return np.select([RING_KIND == BAND, RING_KIND == PRONG], [up_band, prong], gem)
+
+
+ORDER = draw_order()                                  # 0 … 1.7
+DRAW = (0.3, 5.6)                                     # the sweep runs slowly over five seconds
+
+
+def smooth(x):
+    x = np.clip(x, 0, 1)
+    return x * x * (3 - 2 * x)
+
+
+def gather(p, t):
+    """sweep: points appear where the drawing light has passed"""
+    head = (t - DRAW[0]) / (DRAW[1] - DRAW[0]) * ORDER.max()
+    k = smooth((head - ORDER) / 0.06)
+    lit = (head - ORDER > 0.03) & (head - ORDER < 0.05)
+    return p + (1 - k)[:, None] * SEED * 0.22, k, lit
+
+
+def orbits(t, n=180):
+    """three thin orbits, tilted like an atom around the ring"""
+    out = []
+    for i, (r, tilt) in enumerate([(1.75, 0.70), (1.90, -0.70), (1.60, 1.45)]):
+        th = np.linspace(0, TAU, n) + t * 0.15 * (i + 1)
+        q = np.stack([r * np.cos(th), np.zeros(n), r * np.sin(th)], 1)
+        c, s = np.cos(tilt), np.sin(tilt)
+        out.append(q @ np.array([[c, s, 0], [-s, c, 0], [0, 0, 1]]) + [0, 0.25, 0])
+    return np.concatenate(out)
+
+
+def shade(n, kind, facet, t):
+    key, rim = lights(t)
+    half = (key + [0, 0, 1]) / np.linalg.norm(key + [0, 0, 1])
+    gem = kind == GEM                                    # light passes through the stone
+    diff = np.where(gem, np.abs(n @ key), np.clip(n @ key, 0, 1))
+    spec = np.clip(n @ half, 0, 1) ** np.where(gem, 40, 24)
+    fire = np.where(gem, 0.5 + 0.5 * np.sin(t * 3.1 + facet * 1.7), 0.6)
+    edge = np.clip(n @ rim, 0, 1) ** 2
+    glow = np.where(gem, 0.20 + 0.35 * fire, 0.06)
+    return glow + 0.62 * diff + 1.3 * spec * fire + 0.30 * edge, spec * fire
+
+
+def project(p, d=7.0, f=805.0):
+    z = d - p[:, 2]
+    return 360 + f * p[:, 0] / z, 470 - f * p[:, 1] / z, z
+
+
+def rasterise(sx, sy, z, b):
+    """one letter per cell: the nearest point wins, its brightness picks the letter"""
+    col, row = (sx // 6).astype(int), (sy // 9).astype(int)
+    ok = (col >= 0) & (col < COLS) & (row >= 0) & (row < ROWS)
+    cell, z, b = row[ok] * COLS + col[ok], z[ok], b[ok]
+    order = np.lexsort((z, cell))
+    first = np.r_[True, cell[order][1:] != cell[order][:-1]]
+    grid = np.zeros(COLS * ROWS)
+    grid[cell[order[first]]] = b[order[first]]
+    return grid.reshape(ROWS, COLS)
+
+
+def frame(t):
+    p, k, lit = gather(RING_P, t)
+    a = spin(t)
+    p, n = rot_y(p, a), rot_y(RING_N, a)
+    b, glint = shade(n, RING_KIND, FACET, t)
+    b = np.where(lit, 1.25, b * k * k)
+    o = rot_y(orbits(t), a * 0.25)
+    ob = np.full(len(o), 0.09 * smooth(t - DRAW[1]))
+    grid = rasterise(*project(np.concatenate([p, o])), np.concatenate([b, ob]))
+    letters = (grid > 0.04).sum()
+    glints = (glint > 0.3).sum()
+    text = "\n".join("".join(RAMP[min(int(v * 15), 15)] for v in r) for r in grid)
+    return text, np.degrees(a) % 360, glints, letters
+
+
+if __name__ == "__main__":
+    for i in range(20 * 30):
+        text, rot, glints, letters = frame(i / 30)
+        print("\x1b[H" + text)
+        print(f"rotation {rot:06.2f}°   glints {glints}   letters {letters:,}")
+</script>
+
+<script>
+(() => {
+  "use strict";
+  // ---------- constants (mirror art.py) ----------
+  const TAU = Math.PI * 2;
+  const R_BAND = 1.0, BAND_W = 0.28, BAND_T = 0.20;
+  const GIRDLE_R = 0.42, GIRDLE_Y = 1.52, TABLE_R = 0.25, TABLE_Y = 1.69, CULET_Y = 1.18;
+  const BAND = 0, PRONG = 1, GEM = 2, TURN = 12.0;
+  const RAMP = " .:-=+*oxO08%#&@";
+  const CW = 6, CH = 9, COLS = 120, ROWS = 84, W = COLS * CW, H = ROWS * CH;
+  const DRAW = [0.3, 5.6], CAM_D = 7.0, FOC = 805, CX = 360, CY = 470, FLOOR = -1.2;
+  const LOOP = 25, TYPE_END = 19.2;
+  const ORB = [[1.75, 0.70], [1.90, -0.70], [1.60, 1.45]];
+
+  // ---------- seeded randomness ----------
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const rand = mulberry32(22);
+  const gauss = () => { const u = 1 - rand(), v = rand(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(TAU * v); };
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+  const smooth = (x) => { x = x < 0 ? 0 : x > 1 ? 1 : x; return x * x * (3 - 2 * x); };
+
+  // ---------- geometry ----------
+  const Pa = [], Na = [], Ka = [], Fa = [];
+  const add = (p, n, k, f) => { Pa.push(p[0], p[1], p[2]); Na.push(n[0], n[1], n[2]); Ka.push(k); Fa.push(f); };
+
+  // band
+  for (let j = 0; j < 28; j++) {
+    const v = TAU * j / 28, cr = Math.cos(v), sr = Math.sin(v);
+    const r = Math.sign(cr) * Math.sqrt(Math.abs(cr)) * BAND_T / 2;
+    const z = Math.sign(sr) * Math.sqrt(Math.abs(sr)) * BAND_W / 2;
+    for (let i = 0; i < 420; i++) {
+      const u = TAU * i / 420, cu = Math.cos(u), su = Math.sin(u);
+      add([(R_BAND + r) * cu, (R_BAND + r) * su, z], [cr * cu, cr * su, sr], BAND, -1);
+    }
+  }
+  // prongs
+  for (let i = 0; i < 4; i++) {
+    const a = TAU * (i + 0.5) / 4, ca = Math.cos(a), sa = Math.sin(a);
+    const base = [0.08 * ca, R_BAND + BAND_T / 2, 0.08 * sa];
+    const tip = [(GIRDLE_R + 0.015) * ca, TABLE_Y - 0.03, (GIRDLE_R + 0.015) * sa];
+    const d = norm(sub(tip, base));
+    const s = norm(cross(d, [0, 0, 1]));
+    const w = cross(s, d);
+    for (let p = 0; p < 12; p++) {
+      const phi = TAU * p / 12, cp = Math.cos(phi), sp = Math.sin(phi);
+      const n = [cp * s[0] + sp * w[0], cp * s[1] + sp * w[1], cp * s[2] + sp * w[2]];
+      for (let q = 0; q < 40; q++) {
+        const u = q / 39;
+        add([base[0] + u * (tip[0] - base[0]) + n[0] * 0.022,
+             base[1] + u * (tip[1] - base[1]) + n[1] * 0.022,
+             base[2] + u * (tip[2] - base[2]) + n[2] * 0.022], n, PRONG, -1);
+      }
+    }
+  }
+  // diamond
+  let nf = 0;
+  function facet(a, b, c, normal, k = 110) {
+    const n = norm(normal);
+    for (let i = 0; i < k; i++) {
+      const u = rand(), v = rand();
+      if (u + v > 1) continue;
+      add([a[0] + (b[0] - a[0]) * u + (c[0] - a[0]) * v,
+           a[1] + (b[1] - a[1]) * u + (c[1] - a[1]) * v,
+           a[2] + (b[2] - a[2]) * u + (c[2] - a[2]) * v], n, GEM, nf);
+    }
+    nf++;
+  }
+  for (let i = 0; i < 16; i++) {
+    const a0 = TAU * i / 16, a1 = TAU * (i + 1) / 16;
+    const g0 = [GIRDLE_R * Math.cos(a0), GIRDLE_Y, GIRDLE_R * Math.sin(a0)];
+    const g1 = [GIRDLE_R * Math.cos(a1), GIRDLE_Y, GIRDLE_R * Math.sin(a1)];
+    const t0 = [TABLE_R * Math.cos(a0), TABLE_Y, TABLE_R * Math.sin(a0)];
+    const t1 = [TABLE_R * Math.cos(a1), TABLE_Y, TABLE_R * Math.sin(a1)];
+    const culet = [0, CULET_Y, 0];
+    let crown = cross(sub(g1, g0), sub(t0, g0));
+    const cs = Math.sign(crown[1]) || 1; crown = crown.map((x) => x * cs);
+    facet(g0, g1, t0, crown);
+    facet(g1, t1, t0, [crown[0], crown[1] * 1.15, crown[2]]);
+    let pav = cross(sub(culet, g0), sub(g1, g0));
+    const ps = -Math.sign(pav[1]) || 1; pav = pav.map((x) => x * ps);
+    facet(g0, g1, culet, pav);
+    facet([0, TABLE_Y, 0], t0, t1, [0, 1, 0]);
+  }
+
+  const P = Float32Array.from(Pa), N = Float32Array.from(Na);
+  const KIND = Uint8Array.from(Ka), FACET = Int16Array.from(Fa);
+  const NP = KIND.length;
+  const SEED = new Float32Array(NP * 3);
+  for (let i = 0; i < SEED.length; i++) SEED[i] = gauss();
+  const ORDER = new Float32Array(NP);
+  let ORDER_MAX = 0;
+  for (let i = 0; i < NP; i++) {
+    const x = P[i * 3], y = P[i * 3 + 1];
+    let o;
+    if (KIND[i] === BAND) {
+      let ang = Math.atan2(y, x) + TAU / 4;
+      ang = Math.atan2(Math.sin(ang), Math.cos(ang));
+      o = Math.abs(ang) / Math.PI;
+    } else if (KIND[i] === PRONG) o = 1.0 + (y - R_BAND - BAND_T / 2) / (TABLE_Y - R_BAND) * 0.25;
+    else o = 1.25 + (y - CULET_Y) / (TABLE_Y - CULET_Y) * 0.45;
+    ORDER[i] = o; if (o > ORDER_MAX) ORDER_MAX = o;
+  }
+
+  const KEY = norm([-0.4, 0.7, 0.8]);
+  const HALF = norm([KEY[0], KEY[1], KEY[2] + 1]);
+
+  // background stars
+  const STARS = [];
+  for (let i = 0; i < 300; i++) STARS.push([rand() * COLS | 0, rand() * (ROWS - 4) | 0, rand() * TAU, 0.6 + rand() * 2.2, 0.05 + rand() * 0.14]);
+
+  // ---------- buffers ----------
+  const NC = COLS * ROWS;
+  const zbuf = new Float32Array(NC), bri = new Float32Array(NC), tint = new Uint8Array(NC);
+  const spark = new Float32Array(NC), sxs = new Float32Array(NC), sys = new Float32Array(NC);
+  const ring = new Uint8Array(NC), rz = new Float32Array(NC), rb = new Float32Array(NC);
+
+  // ---------- canvas + glyph atlases ----------
+  const art = document.getElementById("art"), ctx = art.getContext("2d");
+  const glow = document.getElementById("glow"), gctx = glow.getContext("2d");
+  let atlasCool, atlasWarm;
+  function buildAtlas(rgb) {
+    const c = document.createElement("canvas");
+    c.width = RAMP.length * CW * 2; c.height = CH * 2;
+    const x = c.getContext("2d");
+    x.font = '500 20px "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace';
+    x.textAlign = "center"; x.textBaseline = "middle";
+    for (let g = 1; g < RAMP.length; g++) {
+      const a = 0.30 + 0.70 * g / (RAMP.length - 1);
+      x.fillStyle = `rgba(${rgb},${a.toFixed(3)})`;
+      x.fillText(RAMP[g], g * CW * 2 + CW, CH + 1);
+    }
+    return c;
+  }
+  function buildAtlases() { atlasCool = buildAtlas("232,236,244"); atlasWarm = buildAtlas("255,226,170"); }
+  buildAtlases();
+
+  function flare(x, y, s, len, warm) {
+    const col = warm ? "255,232,190" : "235,242,255";
+    const L = len * s, Lh = L * 0.55;
+    let g = ctx.createLinearGradient(x, y - L, x, y + L);
+    g.addColorStop(0, `rgba(${col},0)`); g.addColorStop(0.5, `rgba(${col},${(0.9 * s).toFixed(3)})`); g.addColorStop(1, `rgba(${col},0)`);
+    ctx.fillStyle = g; ctx.fillRect(x - 0.6, y - L, 1.2, 2 * L);
+    g = ctx.createLinearGradient(x - Lh, y, x + Lh, y);
+    g.addColorStop(0, `rgba(${col},0)`); g.addColorStop(0.5, `rgba(${col},${(0.7 * s).toFixed(3)})`); g.addColorStop(1, `rgba(${col},0)`);
+    ctx.fillStyle = g; ctx.fillRect(x - Lh, y - 0.5, 2 * Lh, 1);
+    const r = 3 + 6 * s;
+    g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, `rgba(${col},${(0.55 * s).toFixed(3)})`); g.addColorStop(1, `rgba(${col},0)`);
+    ctx.fillStyle = g; ctx.fillRect(x - r, y - r, 2 * r, 2 * r);
+  }
+
+  const spinAt = (t) => TAU * Math.max(t - DRAW[1] - 0.6, 0) / TURN;
+  const hudEl = document.getElementById("hud"), tEl = document.getElementById("tval"), dotEl = document.getElementById("dot");
+  const fadeEl = document.getElementById("fade");
+  const floorSy = CY - FOC * FLOOR / CAM_D;
+  const best = [];
+
+  function render(t) {
+    const head = (t - DRAW[0]) / (DRAW[1] - DRAW[0]) * ORDER_MAX;
+    const a = spinAt(t), c = Math.cos(a), s = Math.sin(a);
+    const rim = norm([Math.cos(t * 0.3), 0.5, Math.sin(t * 0.3)]);
+    zbuf.fill(1e9); bri.fill(0); tint.fill(0); spark.fill(0); ring.fill(0); rz.fill(1e9); rb.fill(0);
+    let glints = 0;
+    let lx = 0, ly = 0, ln = 0, rx = 0, ry = 0, rn = 0;
+
+    for (let i = 0; i < NP; i++) {
+      const o = ORDER[i], xk = (head - o) / 0.06;
+      if (xk <= 0) continue;
+      const k = smooth(xk), j = i * 3, q = (1 - k) * 0.22;
+      const px = P[j] + q * SEED[j], py = P[j + 1] + q * SEED[j + 1], pz = P[j + 2] + q * SEED[j + 2];
+      const X = c * px + s * pz, Z = -s * px + c * pz, Y = py;
+      const zc = CAM_D - Z, sx = CX + FOC * X / zc, sy = CY - FOC * Y / zc;
+      const nx = c * N[j] + s * N[j + 2], ny = N[j + 1], nz = -s * N[j] + c * N[j + 2];
+      const kd = KIND[i];
+      const gem = kd === GEM, nl = nx * KEY[0] + ny * KEY[1] + nz * KEY[2];
+      const diff = gem ? Math.abs(nl) : Math.max(0, nl);
+      const hd = Math.max(0, nx * HALF[0] + ny * HALF[1] + nz * HALF[2]);
+      const spec = Math.pow(hd, gem ? 40 : 24);
+      const f = FACET[i];
+      const fire = gem ? 0.5 + 0.5 * Math.sin(t * 3.1 + f * 1.7) : 0.6;
+      const er = Math.max(0, nx * rim[0] + ny * rim[1] + nz * rim[2]);
+      const sf = spec * fire;
+      let b = (gem ? 0.20 + 0.35 * fire : 0.06) + 0.62 * diff + 1.3 * sf + 0.30 * er * er;
+      if (k > 0.9 && (sf > 0.3 || spec > 0.75)) glints++;
+      const hdo = head - o, lit = hdo > 0.03 && hdo < 0.05;
+      if (lit) {
+        b = 1.25;
+        if (X < -0.02) { lx += sx; ly += sy; ln++; } else { rx += sx; ry += sy; rn++; }
+      } else b *= k * k;
+
+      if ((i & 1) === 0 && k > 0.5) {
+        const ys = CY - FOC * (2 * FLOOR - Y) / zc;
+        const col = Math.floor(sx / CW), row = Math.floor(ys / CH);
+        if (col >= 0 && col < COLS && row >= 0 && row < ROWS) {
+          const idx = row * COLS + col;
+          if (zc < rz[idx]) { rz[idx] = zc; rb[idx] = b; }
+        }
+      }
+      const col = Math.floor(sx / CW), row = Math.floor(sy / CH);
+      if (col < 0 || col >= COLS || row < 0 || row >= ROWS) continue;
+      const idx = row * COLS + col;
+      if (zc < zbuf[idx]) {
+        zbuf[idx] = zc; bri[idx] = b; ring[idx] = 1;
+        tint[idx] = lit || (gem && (sf > 0.12 || fire > 0.85)) ? 1 : 0;
+        spark[idx] = gem ? Math.max(sf * 1.4, fire > 0.97 ? 0.6 : 0) : (spec > 0.9 ? spec * 0.5 : 0);
+        sxs[idx] = sx; sys[idx] = sy;
+      }
+    }
+
+    // orbits
+    const of = smooth(t - DRAW[1]);
+    if (of > 0) {
+      const ca = Math.cos(a * 0.25), sa = Math.sin(a * 0.25);
+      for (let m = 0; m < 3; m++) {
+        const r = ORB[m][0], ct = Math.cos(ORB[m][1]), st = Math.sin(ORB[m][1]);
+        const comet = t * 0.8 + m * 2.1;
+        for (let i = 0; i < 180; i++) {
+          const th0 = TAU * i / 180, th = th0 + t * 0.15 * (m + 1);
+          const qx = r * Math.cos(th), qz = r * Math.sin(th);
+          const x1 = qx * ct, y1 = qx * st + 0.25, z1 = qz;
+          const X = ca * x1 + sa * z1, Z = -sa * x1 + ca * z1;
+          const zc = CAM_D - Z, sx = CX + FOC * X / zc, sy = CY - FOC * y1 / zc;
+          const col = Math.floor(sx / CW), row = Math.floor(sy / CH);
+          if (col < 0 || col >= COLS || row < 0 || row >= ROWS) continue;
+          const idx = row * COLS + col;
+          let d = (comet - th0) % TAU; if (d < 0) d += TAU;
+          const tb = d < 1.2 ? 0.32 * (1 - d / 1.2) ** 2 : 0;
+          const b = (0.09 + tb) * of * (0.55 + 0.45 * (Z + 2) / 4);
+          if (ring[idx]) { if (zc < zbuf[idx] && b > bri[idx]) { bri[idx] = b; tint[idx] = 0; } }
+          else if (b > bri[idx]) { bri[idx] = b; zbuf[idx] = zc; tint[idx] = 0; }
+        }
+      }
+    }
+    // stars
+    for (let i = 0; i < STARS.length; i++) {
+      const st = STARS[i], idx = st[1] * COLS + st[0];
+      if (bri[idx] > 0) continue;
+      const tw = 0.5 + 0.5 * Math.sin(t * st[3] + st[2]);
+      bri[idx] = st[4] * (0.45 + 0.9 * tw * tw);
+    }
+
+    // ---- paint ----
+    ctx.setTransform(2, 0, 0, 2, 0, 0);
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#050506";
+    ctx.fillRect(0, 0, W, H);
+
+    for (let idx = 0; idx < NC; idx++) {
+      const v = rb[idx];
+      if (v <= 0 || bri[idx] > 0) continue;
+      const row = (idx / COLS) | 0, col = idx - row * COLS;
+      const fall = (row * CH - floorSy) / 150;
+      if (fall > 1) continue;
+      const g = Math.min(15, Math.round(Math.min(1, v) * 15));
+      if (!g) continue;
+      ctx.globalAlpha = 0.16 * (1 - Math.max(0, fall));
+      ctx.drawImage(atlasCool, g * CW * 2, 0, CW * 2, CH * 2, col * CW, row * CH, CW, CH);
+    }
+    ctx.globalAlpha = 1;
+    let letters = 0;
+    for (let idx = 0; idx < NC; idx++) {
+      const v = bri[idx];
+      if (v <= 0) continue;
+      const g = Math.min(15, Math.round(Math.min(1, v) * 15));
+      if (!g) continue;
+      if (ring[idx] && v > 0.04) letters++;
+      const row = (idx / COLS) | 0, col = idx - row * COLS;
+      ctx.drawImage(tint[idx] ? atlasWarm : atlasCool, g * CW * 2, 0, CW * 2, CH * 2, col * CW, row * CH, CW, CH);
+    }
+
+    // glint flares on the brightest facets
+    best.length = 0;
+    for (let idx = 0; idx < NC; idx++) {
+      const sp = spark[idx];
+      if (sp < 0.45) continue;
+      if (best.length < 7) { best.push(idx); continue; }
+      let lo = 0; for (let q = 1; q < best.length; q++) if (spark[best[q]] < spark[best[lo]]) lo = q;
+      if (sp > spark[best[lo]]) best[lo] = idx;
+    }
+    ctx.globalCompositeOperation = "lighter";
+    for (let q = 0; q < best.length; q++) {
+      const idx = best[q];
+      const sv = Math.min(1, (spark[idx] - 0.3) * 2.6) * (0.6 + 0.4 * Math.sin(t * 9 + idx));
+      flare(sxs[idx], sys[idx], sv, 48, tint[idx] === 1);
+    }
+    if (ln) flare(lx / ln, ly / ln, 1, 42, true);
+    if (rn) flare(rx / rn, ry / rn, 1, 42, true);
+    ctx.globalCompositeOperation = "source-over";
+
+    gctx.clearRect(0, 0, glow.width, glow.height);
+    gctx.drawImage(art, 0, 0, glow.width, glow.height);
+
+    // HUD
+    const deg = (a * 180 / Math.PI) % 360;
+    const degS = deg.toFixed(2).padStart(6, "0");
+    hudEl.textContent = `@nrkaya · 2026\nrotation ${degS}°   glints ${String(glints).padStart(3, " ")}\nletters ${letters.toLocaleString("en-US")}`;
+    tEl.textContent = t.toFixed(2).padStart(5, "0");
+    dotEl.style.opacity = (t % 1) < 0.5 ? 1 : 0.25;
+    fadeEl.style.opacity = smooth((t - (LOOP - 0.8)) / 0.7).toFixed(3);
+    renderCode(t);
+  }
+
+  // ---------- editor panel ----------
+  const SRC = document.getElementById("art-py").textContent.replace(/^\n+|\s+$/g, "").split("\n");
+  const KW = new Set("def return for in if else elif or and not import from as nonlocal while lambda with is".split(" "));
+  const BI = new Set("range len min max int print abs enumerate zip str".split(" "));
+  const LIT = new Set(["True", "False", "None"]);
+  function tokenize(lines) {
+    let inDoc = false;
+    return lines.map((line) => {
+      const out = []; let i = 0, prev = "";
+      const push = (text, cls) => {
+        if (!cls && out.length && !out[out.length - 1][1]) out[out.length - 1][0] += text;
+        else out.push([text, cls]);
+      };
+      while (i < line.length) {
+        if (inDoc) {
+          const j = line.indexOf('"""', i);
+          if (j < 0) { push(line.slice(i), "s"); i = line.length; } else { push(line.slice(i, j + 3), "s"); i = j + 3; inDoc = false; }
+          continue;
+        }
+        const ch = line[i];
+        if (ch === "#") { push(line.slice(i), "c"); break; }
+        if (line.startsWith('"""', i)) {
+          const j = line.indexOf('"""', i + 3);
+          if (j < 0) { push(line.slice(i), "s"); inDoc = true; i = line.length; } else { push(line.slice(i, j + 3), "s"); i = j + 3; }
+          continue;
+        }
+        if (ch === '"' || ch === "'" || (ch === "f" && line[i + 1] === '"')) {
+          const q = ch === "f" ? '"' : ch; let j = i + (ch === "f" ? 2 : 1);
+          while (j < line.length && line[j] !== q) { if (line[j] === "\\") j++; j++; }
+          push(line.slice(i, j + 1), "s"); i = j + 1; continue;
+        }
+        const num = /^(\d+\.?\d*(e-?\d+)?|\.\d+)/.exec(line.slice(i));
+        if (num && !/[A-Za-z_]/.test(line[i - 1] || "")) { push(num[0], "n"); i += num[0].length; continue; }
+        const id = /^[A-Za-z_]\w*/.exec(line.slice(i));
+        if (id) {
+          const w = id[0]; const rest = line.slice(i + w.length);
+          let cls = "";
+          if (KW.has(w)) cls = "k";
+          else if (LIT.has(w)) cls = "n";
+          else if (w === "np") cls = "m";
+          else if (prev === "def") cls = "d";
+          else if (/^\(/.test(rest)) cls = BI.has(w) ? "b" : "f";
+          else if (/^[A-Z][A-Z0-9_]+$/.test(w)) cls = "u";
+          push(w, cls); prev = w; i += w.length; continue;
+        }
+        push(ch, ""); i++;
+      }
+      return out;
+    });
+  }
+  const TOK = tokenize(SRC);
+  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  function lineHTML(tokens, n) {
+    let h = "", used = 0;
+    for (const [text, cls] of tokens) {
+      if (used >= n) break;
+      const part = text.slice(0, n - used); used += part.length;
+      h += cls ? `<span class="${cls}">${esc(part)}</span>` : esc(part);
+    }
+    return h;
+  }
+  const FULL = TOK.map((tk) => lineHTML(tk, Infinity));
+  // keystrokes: indentation lands instantly, every other character (and each newline) is one stroke
+  const INDENT = SRC.map((l) => l.length - l.trimStart().length);
+  const START = []; let strokes = 0;
+  for (let i = 0; i < SRC.length; i++) { START.push(strokes); strokes += SRC[i].length - INDENT[i] + 1; }
+  const linesEl = document.getElementById("lines");
+  const LH = 22.5, ANCHOR = 12;
+  let lastKey = "";
+  function caret(t) {
+    const st = Math.min(strokes, Math.floor(t / TYPE_END * strokes));
+    let lo = 0, hi = SRC.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (START[mid] <= st) lo = mid; else hi = mid - 1; }
+    const col = Math.min(SRC[lo].length, INDENT[lo] + (st - START[lo]));
+    return [lo, col, st >= strokes];
+  }
+  function renderCode(t) {
+    const [line, col, done] = caret(t);
+    const frac = SRC[line].length ? (col - INDENT[line]) / Math.max(1, SRC[line].length - INDENT[line]) : 0;
+    const scroll = Math.max(0, line + frac * 0.999 - ANCHOR);
+    const first = Math.floor(scroll);
+    const key = `${line}:${col}:${first}:${done}`;
+    linesEl.style.transform = `translateY(${(-(scroll - first) * LH).toFixed(2)}px)`;
+    if (key === lastKey) return;
+    lastKey = key;
+    let h = "";
+    const last = Math.min(line, first + 23);
+    for (let i = first; i <= last; i++) {
+      const cur = i === line;
+      const body = cur ? lineHTML(TOK[i], col) + `<span class="cursor${done ? " blink" : ""}"></span>` : FULL[i];
+      h += `<div class="ln${cur ? " cur" : ""}"><span class="no">${i + 1}</span><span class="tx">${body}</span></div>`;
+    }
+    linesEl.innerHTML = h;
+  }
+
+  // ---------- fit the 720×1280 stage into the window ----------
+  const fitEl = document.getElementById("fit"), stage = document.getElementById("stage");
+  const recMode = location.hash === "#record";
+  if (recMode) document.body.classList.add("rec");
+  function fit() {
+    const shell = fitEl.parentElement;
+    const s = recMode ? 1 : Math.min(shell.clientWidth / 720, shell.clientHeight / 1280);
+    fitEl.style.width = 720 * s + "px"; fitEl.style.height = 1280 * s + "px";
+    stage.style.transform = `scale(${s})`;
+  }
+  fit(); addEventListener("resize", fit);
+
+  // ---------- clock ----------
+  const stateEl = document.getElementById("state");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let t0 = performance.now(), playing = !reduce, frames = 0, fpsT = performance.now(), frozen = 12;
+
+  function restart() { t0 = performance.now(); if (!playing) { playing = true; requestAnimationFrame(tick); } }
+  stage.addEventListener("click", restart);
+  stage.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); restart(); } });
+
+  function tick(now) {
+    if (!playing) return;
+    let t = (now - t0) / 1000;
+    if (t >= LOOP) { t0 = now; t = 0; }
+    render(t);
+    frames++;
+    if (now - fpsT > 1000) { stateEl.textContent = `running · ${Math.round(frames * 1000 / (now - fpsT))} fps`; frames = 0; fpsT = now; }
+    requestAnimationFrame(tick);
+  }
+
+  const fontsReady = (document.fonts && document.fonts.load)
+    ? Promise.all([document.fonts.load('500 20px "JetBrains Mono"'), document.fonts.load('15px "JetBrains Mono"')]).catch(() => {})
+    : Promise.resolve();
+
+  if (recMode) {
+    window.renderAt = (t) => { stateEl.textContent = "running · 30 fps"; render(t); };
+    window.ready = fontsReady.then(() => { buildAtlases(); return true; });
+  } else {
+    fontsReady.then(() => { buildAtlases(); if (!playing) render(frozen); });
+    if (playing) requestAnimationFrame(tick);
+    else { stateEl.textContent = "paused · click to play"; render(frozen); }
+  }
+})();
+</script>
+
+</body>
+</html>
